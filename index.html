@@ -40,7 +40,7 @@
             margin-bottom: 20px;
             color: #007aff;
         }
-        #answer {
+        #answer, #nameInput {
             width: 100%;
             max-width: 300px;
             padding: 15px;
@@ -49,7 +49,7 @@
             border-radius: 10px;
             margin-bottom: 20px;
         }
-        #checkButton {
+        #checkButton, #startButton {
             background-color: #007aff;
             color: white;
             border: none;
@@ -63,20 +63,28 @@
             font-weight: bold;
             font-size: 18px;
         }
-        #score {
+        #score, #highscore {
             font-size: 16px;
             color: #8e8e93;
+            margin-top: 10px;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Albert's vocabulary trainer</h1>
-        <div id="word"></div>
-        <input type="text" id="answer" placeholder="English translation" autocomplete="off">
-        <button id="checkButton">Check</button>
-        <div id="feedback"></div>
-        <div id="score"></div>
+        <div id="nameContainer">
+            <input type="text" id="nameInput" placeholder="Enter your name" autocomplete="off">
+            <button id="startButton">Start Training</button>
+        </div>
+        <div id="gameContainer" style="display: none;">
+            <div id="word"></div>
+            <input type="text" id="answer" placeholder="English translation" autocomplete="off">
+            <button id="checkButton">Check</button>
+            <div id="feedback"></div>
+            <div id="score"></div>
+            <div id="highscore"></div>
+        </div>
     </div>
 
     <script>
@@ -109,12 +117,27 @@
         let currentWord;
         let score = 0;
         let total = 0;
+        let playerName = "";
+        let highscore = localStorage.getItem('highscore') ? JSON.parse(localStorage.getItem('highscore')) : {};
+
+        function startGame() {
+            playerName = document.getElementById('nameInput').value.trim();
+            if (playerName) {
+                document.getElementById('nameContainer').style.display = 'none';
+                document.getElementById('gameContainer').style.display = 'block';
+                updateHighscore();
+                nextWord();
+            } else {
+                alert("Please enter your name to start the game.");
+            }
+        }
 
         function nextWord() {
             if (words.length === 0) {
                 document.getElementById('word').innerHTML = "Training finished!";
                 document.getElementById('answer').style.display = 'none';
                 document.getElementById('checkButton').style.display = 'none';
+                updateHighscore();
                 return;
             }
             const index = Math.floor(Math.random() * words.length);
@@ -139,17 +162,29 @@
                 document.getElementById('feedback').style.color = "#ff3b30";
             }
             document.getElementById('score').innerHTML = `Score: ${score}/${total}`;
+            updateHighscore();
             setTimeout(nextWord, 1500);
         }
 
+        function updateHighscore() {
+            if (!highscore[playerName] || score > highscore[playerName]) {
+                highscore[playerName] = score;
+                localStorage.setItem('highscore', JSON.stringify(highscore));
+            }
+            let highscoreText = "Highscores:<br>";
+            Object.entries(highscore).sort((a, b) => b[1] - a[1]).forEach(([name, score]) => {
+                highscoreText += `${name}: ${score}<br>`;
+            });
+            document.getElementById('highscore').innerHTML = highscoreText;
+        }
+
+        document.getElementById('startButton').addEventListener('click', startGame);
         document.getElementById('checkButton').addEventListener('click', checkAnswer);
         document.getElementById('answer').addEventListener('keypress', function(event) {
             if (event.key === 'Enter') {
                 checkAnswer();
             }
         });
-
-        nextWord();
     </script>
 </body>
 </html>
