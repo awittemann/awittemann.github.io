@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Vocabulary Trainer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            background-color: #f2f2f7;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #1c1c1e;
+        }
+        #word {
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #007aff;
+        }
+        #answer {
+            width: 100%;
+            max-width: 300px;
+            padding: 15px;
+            font-size: 18px;
+            border: 1px solid #c7c7cc;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        #checkButton {
+            background-color: #007aff;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+        #feedback {
+            margin-top: 20px;
+            font-weight: bold;
+            font-size: 18px;
+        }
+        #score {
+            font-size: 16px;
+            color: #8e8e93;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Albert's vocabulary trainer</h1>
+        <div id="word"></div>
+        <input type="text" id="answer" placeholder="English translation" autocomplete="off">
+        <button id="checkButton">Check</button>
+        <div id="feedback"></div>
+        <div id="score"></div>
+    </div>
+
+    <script>
+        const vokabeln = {
+            "Stuhl": "chair",
+            "Keller": "cellar",
+            "Garage": "garage",
+            "Dachboden": "attic",
+            "Tür": "door",
+            "Tisch": "table",
+            "Küche": "kitchen",
+            "Badezimmer": "bathroom",
+            "Regal": "shelves",
+            "Wohnzimmer": "living room",
+            "Bett": "bed",
+            "Garten": "garden",
+            "Lampe": "lamp",
+            "Schlafzimmer": "bedroom",
+            "Sofa": "sofa",
+            "Schrank": "wardrobe",
+            "Ofen": "cooker",
+            "Dusche": "shower",
+            "Toilette": "toilet",
+            "Fernseher": "TV",
+            "Fenster": "window",
+            "Schreibtisch": "desk"
+        };
+
+        let words = Object.keys(vokabeln);
+        let currentWord;
+        let score = 0;
+        let total = 0;
+
+        function nextWord() {
+            if (words.length === 0) {
+                document.getElementById('word').innerHTML = "Training finished!";
+                document.getElementById('answer').style.display = 'none';
+                document.getElementById('checkButton').style.display = 'none';
+                return;
+            }
+            const index = Math.floor(Math.random() * words.length);
+            currentWord = words[index];
+            words.splice(index, 1);
+            document.getElementById('word').innerHTML = currentWord;
+            document.getElementById('answer').value = '';
+            document.getElementById('feedback').innerHTML = '';
+            document.getElementById('answer').focus();
+        }
+
+        function checkAnswer() {
+            const userAnswer = document.getElementById('answer').value.trim();
+            const correctAnswer = vokabeln[currentWord];
+            total++;
+            if (userAnswer === correctAnswer) {
+                score++;
+                document.getElementById('feedback').innerHTML = "Correct!";
+                document.getElementById('feedback').style.color = "#34c759";
+            } else {
+                document.getElementById('feedback').innerHTML = `Wrong. Correct answer: ${vokabeln[currentWord]}`;
+                document.getElementById('feedback').style.color = "#ff3b30";
+            }
+            document.getElementById('score').innerHTML = `Score: ${score}/${total}`;
+            setTimeout(nextWord, 1500);
+        }
+
+        document.getElementById('checkButton').addEventListener('click', checkAnswer);
+        document.getElementById('answer').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                checkAnswer();
+            }
+        });
+
+        nextWord();
+    </script>
+</body>
+</html>
