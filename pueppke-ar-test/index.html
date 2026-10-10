@@ -66,8 +66,10 @@
   <p class="test">Test für den Naturlernpfad Wentruper Berge. Es wird nichts gespeichert oder verschickt.</p>
 </section>
 
+<script type="importmap">{"imports":{"three":"./lib/three.module.js"}}</script>
 <script type="module">
-import * as THREE from "./lib/three.module.js";
+import * as THREE from "three";
+import { GLTFLoader } from "./lib/addons/loaders/GLTFLoader.js";
 import { FilesetResolver, HandLandmarker } from "./lib/vision_bundle.mjs";
 
 const $ = id => document.getElementById(id);
@@ -237,6 +239,55 @@ function waehle(name){
 $("b-pueppke").onclick = () => waehle("pueppke");
 $("b-manfred").onclick = () => waehle("manfred");
 
+/* Püppke aus Andreas' 3D-Modell (modelle/pueppke.glb). Einzelteile werden zu Gelenken gruppiert,
+   damit Ohren, Arme und Kopf sich bewegen können. Modell ist Z-oben, Blick nach -Y. */
+async function ladePueppkeGLB(){
+  const gltf = await new GLTFLoader().loadAsync("./modelle/pueppke.glb");
+  const teile = {};
+  gltf.scene.traverse(o => { if (o.isMesh) {
+    if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+    const col = o.geometry.attributes.color;   // Farben liegen als sRGB vor → für korrekte Sättigung umrechnen
+    if (col && !col.normalized) for (let i = 0; i < col.count; i++) col.setXYZ(i, ...[col.getX(i), col.getY(i), col.getZ(i)].map(v => Math.pow(v, 2.2)));
+    if (col && col.normalized) { const f = new Float32Array(col.count * 3); for (let i = 0; i < col.count; i++) { f[i*3] = Math.pow(col.getX(i), 2.2); f[i*3+1] = Math.pow(col.getY(i), 2.2); f[i*3+2] = Math.pow(col.getZ(i), 2.2); } o.geometry.setAttribute("color", new THREE.BufferAttribute(f, 3)); }
+    o.material = new THREE.MeshLambertMaterial({ vertexColors: true });
+    teile[parseInt(o.name.split("_").pop(), 10)] = o;
+  }});
+  const modell = new THREE.Group();          // in Modellkoordinaten (Z oben)
+  const gelenk = (ids, px, py, pz) => {      // Gruppe mit Drehpunkt
+    const gr = new THREE.Group(); gr.position.set(px, py, pz);
+    for (const i of ids) if (teile[i]) { const m = teile[i]; m.position.set(-px, -py, -pz); gr.add(m); }
+    return gr;
+  };
+  const kopf = gelenk([2, 3, 4, 5, 6, 7, 8, 9, 23, 24, 25, 26, 27, 28], 0, 0, 1.75);
+  const ohrL = gelenk([10, 11], -0.2, 0, 2.62), ohrR = gelenk([12, 13], 0.2, 0, 2.6);
+  // Ohren hängen am Kopf: Drehpunkt relativ zum Kopf
+  for (const o of [ohrL, ohrR]) { o.position.z -= 1.75; kopf.add(o); }
+  const armL = gelenk([14, 15], -0.3, 0, 1.52), armR = gelenk([18, 19], 0.3, 0, 1.52);
+  const rumpf = new THREE.Group();
+  for (const i of [0, 1, 16, 17, 20, 21, 22]) if (teile[i]) rumpf.add(teile[i]);
+  const koerper = new THREE.Group(); koerper.add(rumpf, kopf, armL, armR);
+  modell.add(koerper);
+  modell.rotation.x = -Math.PI / 2;           // Z-oben → Y-oben, Blick zur Kamera
+  modell.scale.setScalar(1.75 / 3.88);        // gleiche Größe wie bisher
+  const g = new THREE.Group(); g.add(modell); g.add(schattenScheibe());
+  g.userData.tick = t => {
+    const phase = t % 3.2; const hop = phase < 0.9 ? Math.abs(Math.sin(phase / 0.9 * Math.PI * 2)) * 0.45 : 0;
+    koerper.position.z = hop;
+    ohrL.rotation.x = Math.sin(t * 3) * 0.08 + hop * 0.5;  ohrL.rotation.y = -Math.sin(t * 2.2) * 0.06;
+    ohrR.rotation.x = Math.sin(t * 3 + 1) * 0.08 + hop * 0.5; ohrR.rotation.y = Math.sin(t * 2.2 + 1) * 0.06;
+    kopf.rotation.y = Math.sin(t * 1.3) * 0.08;
+    armR.rotation.y = hop ? -0.8 : -0.3 - (Math.sin(t * 7) * 0.5 + 0.5) * 0.9;   // winkt
+    armL.rotation.y = hop ? 0.8 : 0.1;
+    g.children.at(-1).scale.setScalar(1 - hop * 0.5);
+  };
+  return g;
+}
+ladePueppkeGLB().then(g => {
+  const warAktiv = aktiv === figuren.pueppke;
+  figuren.pueppke = g;
+  if (warAktiv) waehle("pueppke");
+}).catch(e => console.warn("3D-Modell nicht geladen, Platzhalter bleibt", e));
+
 /* ---------- Kamera + Handerkennung ---------- */
 let landmarker, gespiegelt = false;
 async function starte(){
@@ -262,7 +313,7 @@ async function starte(){
   }
 }
 $("los").onclick = starte;
-if (location.hash.startsWith("#studio")) { $("start").hidden = true; document.documentElement.style.background = document.body.style.background = "#fbf7ee"; requestAnimationFrame(schleife); }
+if (location.hash.startsWith("#studio")) { renderer.setClearColor(0xfbf7ee, 1); $("start").hidden = true; document.documentElement.style.background = document.body.style.background = "#fbf7ee"; requestAnimationFrame(schleife); }
 
 /* Bildkoordinaten (0..1) → Bildschirmpixel, passend zu object-fit: cover */
 function aufBildschirm(p){
