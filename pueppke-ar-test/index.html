@@ -83,7 +83,7 @@ function resize(){ W = innerWidth; H = innerHeight; renderer.setSize(W, H, false
   cam.left = 0; cam.right = W; cam.top = 0; cam.bottom = -H; cam.updateProjectionMatrix(); }
 addEventListener("resize", resize); resize();
 
-scene.add(new THREE.HemisphereLight(0xfff6e0, 0x4a5a3a, 1.6));
+scene.add(new THREE.HemisphereLight(0xfffaf0, 0x8a7a5a, 2.2));
 const sonne = new THREE.DirectionalLight(0xffffff, 2.2); sonne.position.set(-0.6, 1, 1.2); scene.add(sonne);
 
 const mat = (c, r = 0.85) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
@@ -96,67 +96,102 @@ function schattenScheibe(){
   s.rotation.x = -Math.PI / 2; s.scale.set(1, 0.6, 1); return s;
 }
 
-/* Püppke nach dem Charakterblatt: gelb, cremefarbener Bauch, orange Ohrspitzen, große Augen, Schnurrhaare */
+/* Püppke nach dem Charakterblatt: sehr lange blattförmige Ohren mit orangen Spitzen, großer runder Kopf,
+   Augen weit außen, birnenförmiger Körper mit hellem Bauch, dünne Arme, lange Hasenbeine mit großen Füßen */
+function papierTextur(){
+  const c = document.createElement("canvas"); c.width = c.height = 256; const x = c.getContext("2d");
+  x.fillStyle = "#fff"; x.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 9000; i++) { const v = 215 + Math.random() * 40; x.fillStyle = `rgba(${v},${v},${v - 10},0.35)`; x.fillRect(Math.random() * 256, Math.random() * 256, 1 + Math.random() * 2, 1 + Math.random() * 3); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 3); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const papier = papierTextur();
+const mal = (c, extra = {}) => new THREE.MeshLambertMaterial({ color: c, map: papier, ...extra });
+
+// Rotationskörper aus Profilpunkten [radius, höhe]
+const drehkoerper = (profil, m, seg = 40) => new THREE.Mesh(new THREE.LatheGeometry(profil.map(([r, h]) => new THREE.Vector2(r, h)), seg), m);
+
+// Blattförmiges Ohr mit Farbverlauf gelb → orange zur Spitze und zu den Rändern
+function baueOhr(laenge, breite){
+  const prof = []; const n = 24;
+  for (let i = 0; i <= n; i++) { const t = i / n; prof.push(new THREE.Vector2(Math.sin(Math.PI * Math.pow(t, 0.72)) * breite * (1 - 0.15 * t), t * laenge)); }
+  const geo = new THREE.LatheGeometry(prof, 32);
+  const pos = geo.attributes.position, farben = [], gelb = new THREE.Color(0xf6b61f), orange = new THREE.Color(0xe2601f), innen = new THREE.Color(0xeb7a2c), c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i) / laenge, z = pos.getZ(i), xr = Math.abs(pos.getX(i)) / breite;
+    let k = Math.max(0, (y - 0.3) / 0.6); k = Math.min(1, k * 1.25 + (xr > 0.6 ? (xr - 0.6) * 2.2 : 0) * y);
+    c.copy(gelb).lerp(z > 0 ? innen : orange, k * (z > 0 ? 0.8 : 1)); farben.push(c.r, c.g, c.b);
+  }
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(farben, 3));
+  const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, map: papier }));
+  m.scale.z = 0.28; // flach wie ein Blatt
+  return m;
+}
+
 function baueHase(){
   const g = new THREE.Group();
-  const fell = mat(0xf5bf2c, 0.9), bauch = mat(0xf9dc8c, 0.95), orange = mat(0xe8742a, 0.8), nase = mat(0xd9572b, 0.5);
-  const weiss = mat(0xffffff, 0.35), schwarz = mat(0x15110e, 0.25), schwanz = mat(0xfbf3dc, 1);
+  const fell = mal(0xf6b61f), bauch = mal(0xf8d77a), nase = mal(0xd9502a), weiss = new THREE.MeshLambertMaterial({ color: 0xffffff }),
+        schwarz = new THREE.MeshLambertMaterial({ color: 0x141010 }), mund = new THREE.MeshLambertMaterial({ color: 0x3a1a12 }), schwanz = mal(0xfdf4dc);
   const kapsel = (r, l, m) => new THREE.Mesh(new THREE.CapsuleGeometry(r, l, 8, 16), m);
   const koerper = new THREE.Group(); g.add(koerper);
-  // Rumpf: schlank, nach oben schmaler
-  koerper.add(at(kugel(0.2, fell, 1, 1.45, 0.9), 0, 0.5, 0));
-  koerper.add(at(kugel(0.15, bauch, 1, 1.5, 0.5), 0, 0.47, 0.11));
-  // Beine + lange Füße
+
+  // birnenförmiger Rumpf mit dünnem Hals
+  const rumpf = drehkoerper([[0,0.22],[0.13,0.24],[0.19,0.32],[0.2,0.42],[0.18,0.54],[0.15,0.64],[0.12,0.72],[0,0.8]], fell);
+  rumpf.scale.z = 0.85; koerper.add(rumpf);
+  const b = drehkoerper([[0,0.24],[0.12,0.26],[0.165,0.33],[0.17,0.43],[0.14,0.55],[0.09,0.65],[0,0.7]], bauch);
+  b.scale.set(0.9, 1, 0.62); b.position.z = 0.075; koerper.add(b);
+
+  // lange Hasenbeine: Oberschenkel, dünner Unterschenkel, großer Fuß
   for (const s of [-1, 1]) {
-    koerper.add(at(kugel(0.1, fell, 0.9, 1.6, 1), 0.1 * s, 0.18, 0));
-    koerper.add(at(kugel(0.07, fell, 0.9, 0.55, 2.2), 0.11 * s, 0.04, 0.08));
+    koerper.add(at(kugel(0.115, fell, 0.85, 1.2, 1.1), 0.12 * s, 0.22, -0.01));
+    const unten = kapsel(0.04, 0.07, fell); unten.position.set(0.14 * s, 0.08, 0.0); unten.rotation.x = 0.25; koerper.add(unten);
+    koerper.add(at(kugel(0.06, fell, 0.85, 0.42, 2.4), 0.15 * s, 0.025, 0.08));
   }
-  // Arme (winken)
+
+  // dünne Arme, leicht abgespreizt, kleine Hände
   const arme = [];
   for (const s of [-1, 1]) {
-    const a = new THREE.Group(); a.position.set(0.16 * s, 0.66, 0.03); koerper.add(a);
-    const m = kapsel(0.04, 0.24, fell); m.position.set(0, -0.14, 0); a.add(m);
-    a.add(at(kugel(0.05, fell), 0, -0.29, 0));
-    a.userData.s = s; arme.push(a);
+    const a = new THREE.Group(); a.position.set(0.13 * s, 0.62, 0.02); koerper.add(a);
+    const m = kapsel(0.028, 0.2, fell); m.position.set(0, -0.12, 0); a.add(m);
+    a.add(at(kugel(0.04, fell, 1, 0.9, 0.8), 0, -0.25, 0));
+    arme.push(a);
   }
-  // Puschelschwanz
-  koerper.add(at(kugel(0.08, schwanz), 0, 0.3, -0.18));
-  // Kopf: groß, Schnauze leicht nach vorn
-  const kopf = new THREE.Group(); kopf.position.set(0, 0.98, 0.02); koerper.add(kopf);
-  kopf.add(kugel(0.24, fell, 1.05, 0.95, 1));
-  kopf.add(at(kugel(0.13, bauch, 1.2, 0.85, 0.8), 0, -0.08, 0.15));
-  const n = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.05, 3), nase); n.rotation.set(Math.PI / 2 + 0.3, 0, Math.PI); n.position.set(0, -0.01, 0.25); kopf.add(n);
+  koerper.add(at(kugel(0.07, schwanz), 0, 0.3, -0.17));
+
+  // großer runder Kopf, Wangen, kleine Schnauze mit dreieckiger Nase, offener lachender Mund
+  const kopf = new THREE.Group(); kopf.position.set(0, 0.9, 0.0); koerper.add(kopf);
+  kopf.add(kugel(0.2, fell, 1.12, 1, 1));
+  kopf.add(at(kugel(0.1, fell, 1.05, 0.85, 1.1), 0, -0.04, 0.12));
+  kopf.add(at(kugel(0.1, bauch, 1.15, 0.75, 0.8), 0, -0.08, 0.14));
+  const n = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.04, 3), nase); n.rotation.set(Math.PI / 2, 0, Math.PI); n.position.set(0, -0.005, 0.245); kopf.add(n);
+  const mm = kugel(0.04, mund, 1.2, 0.7, 0.4); mm.position.set(0, -0.085, 0.2); kopf.add(mm);
   for (const s of [-1, 1]) {
-    // große runde Augen mit dicker Pupille und Glanzpunkt
-    kopf.add(at(kugel(0.09, weiss, 1, 1.05, 0.6), 0.12 * s, 0.05, 0.17));
-    kopf.add(at(kugel(0.055, schwarz, 1, 1.05, 0.6), 0.13 * s, 0.045, 0.21));
-    kopf.add(at(kugel(0.013, weiss), 0.11 * s, 0.065, 0.235));
-    // Schnurrhaare
+    // Augen weit außen: großer weißer Kreis, große Pupille, Glanzpunkt
+    const auge = new THREE.Group(); auge.position.set(0.13 * s, 0.04, 0.12); auge.rotation.y = 0.7 * s; kopf.add(auge);
+    auge.add(kugel(0.1, weiss, 1, 1.02, 0.45));
+    auge.add(at(kugel(0.068, schwarz, 1, 1.05, 0.4), 0.012 * s, -0.008, 0.025));
+    auge.add(at(kugel(0.018, weiss), -0.01 * s, 0.03, 0.05));
     const pts = [];
-    for (const dy of [-0.025, 0, 0.025]) pts.push(new THREE.Vector3(0.07 * s, -0.03, 0.22), new THREE.Vector3(0.27 * s, -0.03 + dy * 2.2, 0.16));
-    kopf.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x6b5a48 })));
+    for (const dy of [-0.03, 0, 0.03]) pts.push(new THREE.Vector3(0.06 * s, -0.04, 0.19), new THREE.Vector3(0.3 * s, -0.04 + dy * 1.6, 0.12));
+    kopf.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x7a6a5a })));
   }
-  // Mund (kleines Lächeln)
-  const mund = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.008, 6, 16, Math.PI), schwarz);
-  mund.rotation.z = Math.PI; mund.position.set(0, -0.06, 0.245); kopf.add(mund);
-  // lange Ohren mit orangen Spitzen, leicht nach hinten
+
+  // sehr lange Ohren, leicht nach außen und hinten
   const ohren = [];
   for (const s of [-1, 1]) {
-    const o = new THREE.Group(); o.position.set(0.08 * s, 0.17, -0.03); o.rotation.set(-0.15, 0, -0.12 * s); kopf.add(o);
-    o.add(at(kugel(0.075, fell, 1, 3.6, 0.45), 0, 0.27, 0));
-    o.add(at(kugel(0.05, orange, 1, 2.6, 0.3), 0, 0.3, 0.025));
-    o.add(at(kugel(0.06, orange, 1, 1.6, 0.42), 0, 0.46, 0));
+    const o = new THREE.Group(); o.position.set(0.07 * s, 0.14, -0.03); o.rotation.set(-0.2, 0.25 * s, -0.16 * s); kopf.add(o);
+    o.add(baueOhr(0.82, 0.135));
     ohren.push(o);
   }
+
   g.add(schattenScheibe());
   g.userData.tick = t => {
     const phase = t % 3.2; const hop = phase < 0.9 ? Math.abs(Math.sin(phase / 0.9 * Math.PI * 2)) * 0.2 : 0;
     koerper.position.y = hop;
-    ohren[0].rotation.x = -0.15 + Math.sin(t * 3) * 0.08 - hop * 1.2;
-    ohren[1].rotation.x = -0.15 + Math.sin(t * 3 + 1) * 0.08 - hop * 1.2;
+    ohren[0].rotation.x = -0.2 + Math.sin(t * 3) * 0.07 - hop * 1.3;
+    ohren[1].rotation.x = -0.2 + Math.sin(t * 3 + 1) * 0.07 - hop * 1.3;
     kopf.rotation.z = Math.sin(t * 1.3) * 0.08;
-    arme[0].rotation.z = -0.5 - (hop ? 1.2 : 0.35 + Math.sin(t * 7) * 0.35);  // winkt
-    arme[1].rotation.z = 0.5 + (hop ? 1.2 : 0.15);
+    arme[0].rotation.z = -0.7 - (hop ? 1.0 : 0.4 + Math.sin(t * 7) * 0.4);  // winkt
+    arme[1].rotation.z = 0.7 + (hop ? 1.0 : 0.1);
     g.children.at(-1).scale.setScalar(1 - hop * 1.2);
   };
   return g;
@@ -227,6 +262,7 @@ async function starte(){
   }
 }
 $("los").onclick = starte;
+if (location.hash.startsWith("#studio")) { $("start").hidden = true; document.documentElement.style.background = document.body.style.background = "#fbf7ee"; requestAnimationFrame(schleife); }
 
 /* Bildkoordinaten (0..1) → Bildschirmpixel, passend zu object-fit: cover */
 function aufBildschirm(p){
@@ -242,7 +278,8 @@ const lerp = (a, b, k) => a + (b - a) * k;
 
 function schleife(now){
   requestAnimationFrame(schleife);
-  if (video.readyState >= 2 && video.currentTime !== letzteZeit) {
+  const studio = location.hash.startsWith("#studio");
+  if (!studio && video.readyState >= 2 && video.currentTime !== letzteZeit) {
     letzteZeit = video.currentTime;
     const res = landmarker.detectForVideo(video, now);
     const lm = res.landmarks && res.landmarks[0];
@@ -267,11 +304,13 @@ function schleife(now){
   glatt.sicht = lerp(glatt.sicht, da ? 1 : 0, 0.15);
   $("hinweis").classList.toggle("weg", now - letzteHand < 1200);
 
-  const t = now / 1000;
+  const t = studio ? 0.5 : now / 1000;
+  if (studio) { glatt.x = W / 2; glatt.y = H * 0.88; glatt.gr = H * 0.4; letzteHand = now; glatt.sicht = 1; }
   aktiv.userData.tick(t);
   halter.position.set(glatt.x, -glatt.y, 0);
   halter.scale.setScalar(Math.max(0.001, glatt.gr * glatt.sicht));
   halter.rotation.set(0.32, Math.sin(t * 0.7) * 0.6, -glatt.rot);   // leicht von oben + langsames Drehen, damit man das 3D sieht
+  if (studio) halter.rotation.set(0.1, (parseFloat(location.hash.slice(7)) || 0) * Math.PI / 180, 0);
   halter.visible = glatt.sicht > 0.02;
   renderer.render(scene, cam);
 
