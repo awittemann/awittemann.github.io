@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Püppke auf der Hand</title>
+<style>
+  @font-face{font-family:"ABeeZee";src:url(lib/fonts/abeezee.ttf) format("truetype");font-display:swap}
+  /* Vollbild-Kamera, Figur als 3D-Ebene darüber, Bedienung als schwebende Leiste unten */
+  :root{
+    --flieder:#b9a4d6; --flieder-dunkel:#5b4682; --gelb:#f6d24a;
+    --wald:#24301f; --hell:#fffdf6; --schatten:0 6px 24px rgba(20,16,30,.28);
+    --kind:"ABeeZee", "Comic Sans MS", system-ui, sans-serif;
+  }
+  [hidden]{display:none!important}
+  html,body{margin:0;height:100%;background:var(--wald);color:var(--hell);font-family:var(--kind);overflow:hidden}
+  #video,#gl{position:fixed;inset:0;width:100%;height:100%}
+  #video{object-fit:cover;background:#000}
+  #video.spiegel{transform:scaleX(-1)}
+  #gl{pointer-events:none}
+  .start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:24px;text-align:center;
+    background:radial-gradient(circle at 50% 35%, #3b4a31 0%, var(--wald) 70%)}
+  .start h1{font-size:clamp(28px,8vw,44px);margin:0;line-height:1.1;text-wrap:balance}
+  .start p{margin:0;max-width:30ch;font-size:18px;line-height:1.45;opacity:.9}
+  .hand{font-size:72px;line-height:1}
+  button{font-family:inherit;cursor:pointer;border:0}
+  .los{background:var(--gelb);color:var(--wald);font-size:22px;padding:16px 34px;border-radius:999px;box-shadow:var(--schatten)}
+  .los:focus-visible,.chip:focus-visible{outline:3px solid var(--hell);outline-offset:3px}
+  .test{font-size:13px;opacity:.65}
+  .leiste{position:fixed;left:0;right:0;bottom:0;padding:14px 16px calc(18px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;align-items:center;gap:12px;
+    background:linear-gradient(to top, rgba(20,24,16,.75), rgba(20,24,16,0))}
+  .hinweis{font-size:18px;text-align:center;background:rgba(91,70,130,.85);padding:10px 18px;border-radius:16px;box-shadow:var(--schatten);max-width:32ch;transition:opacity .3s}
+  .hinweis.weg{opacity:0}
+  .chips{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  .chip{background:rgba(255,253,246,.92);color:var(--flieder-dunkel);font-size:17px;padding:10px 18px;border-radius:999px;box-shadow:var(--schatten)}
+  .chip[aria-pressed="true"]{background:var(--gelb);color:var(--wald)}
+  .oben{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:16px;right:16px;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+  .badge{background:rgba(0,0,0,.45);padding:6px 12px;border-radius:999px}
+  .fehler{color:var(--gelb);max-width:32ch}
+  @media (prefers-reduced-motion: reduce){ .hinweis{transition:none} }
+</style>
+</head>
+<body>
+<video id="video" playsinline muted autoplay></video>
+<canvas id="gl"></canvas>
+
+<div class="oben" id="oben" hidden>
+  <span class="badge">Testversion · Platzhalter-Figur</span>
+  <span class="badge" id="fps"></span>
+</div>
+
+<div class="leiste" id="leiste" hidden>
+  <div class="hinweis" id="hinweis">Streck deine Hand flach vor die Kamera</div>
+  <div class="chips" role="group" aria-label="Figur wählen">
+    <button class="chip" id="b-pueppke" aria-pressed="true">Püppke</button>
+    <button class="chip" id="b-manfred" aria-pressed="false">Manfred</button>
+  </div>
+</div>
+
+<section class="start" id="start">
+  <div class="hand" aria-hidden="true">✋</div>
+  <h1>Wer sitzt auf deiner Hand?</h1>
+  <p>Halte das Handy in einer Hand. Streck die andere Hand flach vor die Kamera, und Püppke hüpft darauf.</p>
+  <button class="los" id="los">Kamera starten</button>
+  <p class="fehler" id="fehler" hidden></p>
+  <p class="test">Test für den Naturlernpfad Wentruper Berge. Es wird nichts gespeichert oder verschickt.</p>
+</section>
+
+<script type="module">
+import * as THREE from "./lib/three.module.js";
+import { FilesetResolver, HandLandmarker } from "./lib/vision_bundle.mjs";
+
+const $ = id => document.getElementById(id);
+const video = $("video"), canvas = $("gl");
+
+/* ---------- 3D-Szene ---------- */
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+let W = innerWidth, H = innerHeight;
+const cam = new THREE.OrthographicCamera(0, W, 0, -H, -2000, 2000);
+function resize(){ W = innerWidth; H = innerHeight; renderer.setSize(W, H, false);
+  cam.left = 0; cam.right = W; cam.top = 0; cam.bottom = -H; cam.updateProjectionMatrix(); }
+addEventListener("resize", resize); resize();
+
+scene.add(new THREE.HemisphereLight(0xfff6e0, 0x4a5a3a, 1.6));
+const sonne = new THREE.DirectionalLight(0xffffff, 2.2); sonne.position.set(-0.6, 1, 1.2); scene.add(sonne);
+
+const mat = (c, r = 0.85) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
+const kugel = (r, m, sx = 1, sy = 1, sz = 1) => { const k = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 24), m); k.scale.set(sx, sy, sz); return k; };
+
+const at = (m, x, y, z) => { m.position.set(x, y, z); return m; };
+
+function schattenScheibe(){
+  const s = new THREE.Mesh(new THREE.CircleGeometry(0.42, 40), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }));
+  s.rotation.x = -Math.PI / 2; s.scale.set(1, 0.6, 1); return s;
+}
+
+/* Püppke: Feldhase (Platzhalter aus Grundformen) */
+function baueHase(){
+  const g = new THREE.Group(), fell = mat(0xa87a4c), bauch = mat(0xecd8b6), dunkel = mat(0x1d1612, 0.3), rosa = mat(0xe79aa6);
+  const koerper = new THREE.Group(); g.add(koerper);
+  koerper.add(at(kugel(0.34, fell, 1, 1.15, 0.95), 0, 0.42, 0));
+  koerper.add(at(kugel(0.22, bauch, 1, 1.2, 0.6), 0, 0.40, 0.17));
+  const kopf = new THREE.Group(); kopf.position.set(0, 0.88, 0.04); koerper.add(kopf);
+  kopf.add(kugel(0.23, fell, 1, 0.95, 0.95));
+  kopf.add(at(kugel(0.11, bauch, 1.2, 0.8, 0.8), 0, -0.07, 0.17));
+  kopf.add(at(kugel(0.035, rosa), 0, -0.02, 0.24));
+  for (const s of [-1, 1]) {
+    kopf.add(at(kugel(0.045, dunkel), 0.1 * s, 0.05, 0.18));
+    kopf.add(at(kugel(0.014, mat(0xffffff, 0.2)), 0.1 * s + 0.012, 0.068, 0.215));
+  }
+  const ohren = [];
+  for (const s of [-1, 1]) {
+    const o = new THREE.Group(); o.position.set(0.09 * s, 0.17, -0.02); o.rotation.z = -0.18 * s; kopf.add(o);
+    o.add(at(new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.38, 8, 16), fell), 0, 0.25, 0));
+    const innen = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.3, 8, 16), rosa); innen.position.set(0, 0.25, 0.035); o.add(innen);
+    const spitze = kugel(0.05, dunkel, 1, 0.9, 0.9); spitze.position.set(0, 0.47, 0); o.add(spitze); // Feldhase: schwarze Ohrspitzen
+    ohren.push(o);
+  }
+  for (const s of [-1, 1]) {
+    koerper.add(at(kugel(0.12, fell, 0.8, 0.5, 1.6), 0.17 * s, 0.06, 0.12));
+    koerper.add(at(kugel(0.06, fell, 0.8, 1.4, 0.9), 0.12 * s, 0.32, 0.25));
+  }
+  koerper.add(at(kugel(0.09, mat(0xffffff)), 0, 0.28, -0.33));
+  g.add(schattenScheibe());
+  g.userData.tick = t => {
+    const phase = t % 3.2; const hop = phase < 0.9 ? Math.abs(Math.sin(phase / 0.9 * Math.PI * 2)) * 0.22 : 0;
+    koerper.position.y = hop;
+    ohren[0].rotation.x = Math.sin(t * 3) * 0.08 - hop; ohren[1].rotation.x = Math.sin(t * 3 + 1) * 0.08 - hop;
+    kopf.rotation.z = Math.sin(t * 1.3) * 0.08;
+    g.children.at(-1).scale.setScalar(1 - hop * 1.2);
+  };
+  return g;
+}
+
+/* Manfred: Maulwurf (Platzhalter aus Grundformen) */
+function baueMaulwurf(){
+  const g = new THREE.Group(), fell = mat(0x3b3434, 0.95), rosa = mat(0xe8a0a8, 0.6), dunkel = mat(0x0c0a0a, 0.3);
+  const koerper = new THREE.Group(); g.add(koerper);
+  koerper.add(at(kugel(0.36, fell, 1.05, 0.95, 1), 0, 0.34, 0));
+  const kopf = new THREE.Group(); kopf.position.set(0, 0.6, 0.16); koerper.add(kopf);
+  kopf.add(kugel(0.24, fell, 1, 0.9, 1));
+  const nase = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.2, 20), rosa); nase.rotation.x = Math.PI / 2; nase.position.set(0, -0.03, 0.3); kopf.add(nase);
+  kopf.add(at(kugel(0.045, rosa), 0, -0.03, 0.4));
+  for (const s of [-1, 1]) kopf.add(at(kugel(0.022, dunkel), 0.1 * s, 0.07, 0.2));
+  const haende = [];
+  for (const s of [-1, 1]) {
+    const h = new THREE.Group(); h.position.set(0.3 * s, 0.32, 0.2); koerper.add(h);
+    h.add(kugel(0.13, rosa, 1, 1.15, 0.45));
+    for (let i = -2; i <= 2; i++) h.add(at(kugel(0.025, mat(0xf4e9d8, 0.4), 1, 1.8, 1), i * 0.045, 0.15, 0));
+    haende.push(h);
+  }
+  for (const s of [-1, 1]) koerper.add(at(kugel(0.08, rosa, 1, 0.5, 1.4), 0.18 * s, 0.04, 0.08));
+  g.add(schattenScheibe());
+  g.userData.tick = t => {
+    const grab = Math.sin(t * 6) * 0.5;
+    haende[0].rotation.z = 0.4 + grab; haende[1].rotation.z = -0.4 + grab;
+    haende[0].rotation.x = haende[1].rotation.x = -0.3;
+    koerper.rotation.z = Math.sin(t * 2) * 0.07;
+    kopf.rotation.x = Math.sin(t * 2.5) * 0.12; // schnuppert
+  };
+  return g;
+}
+
+const figuren = { pueppke: baueHase(), manfred: baueMaulwurf() };
+const halter = new THREE.Group(); scene.add(halter);
+let aktiv = figuren.pueppke; halter.add(aktiv);
+function waehle(name){
+  halter.remove(aktiv); aktiv = figuren[name]; halter.add(aktiv);
+  $("b-pueppke").setAttribute("aria-pressed", name === "pueppke");
+  $("b-manfred").setAttribute("aria-pressed", name === "manfred");
+}
+$("b-pueppke").onclick = () => waehle("pueppke");
+$("b-manfred").onclick = () => waehle("manfred");
+
+/* ---------- Kamera + Handerkennung ---------- */
+let landmarker, gespiegelt = false;
+async function starte(){
+  $("los").disabled = true; $("los").textContent = "Einen Moment …";
+  try {
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); }
+    catch { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); gespiegelt = true; }
+    video.srcObject = stream; video.classList.toggle("spiegel", gespiegelt);
+    await video.play();
+    const files = await FilesetResolver.forVisionTasks("./lib/wasm");
+    const opts = d => ({ baseOptions: { modelAssetPath: "./lib/hand_landmarker.task", delegate: d }, runningMode: "VIDEO", numHands: 1 });
+    try { landmarker = await HandLandmarker.createFromOptions(files, opts("GPU")); }
+    catch { landmarker = await HandLandmarker.createFromOptions(files, opts("CPU")); }
+    $("start").hidden = true; $("leiste").hidden = false; $("oben").hidden = false;
+    requestAnimationFrame(schleife);
+  } catch (e) {
+    $("los").disabled = false; $("los").textContent = "Nochmal versuchen";
+    $("fehler").hidden = false;
+    $("fehler").textContent = (e && e.name === "NotAllowedError")
+      ? "Die Kamera wurde nicht erlaubt. Bitte in den Browser-Einstellungen die Kamera für diese Seite freigeben."
+      : "Die Kamera oder die Handerkennung ließ sich nicht starten (" + (e && e.message || e) + ").";
+  }
+}
+$("los").onclick = starte;
+
+/* Bildkoordinaten (0..1) → Bildschirmpixel, passend zu object-fit: cover */
+function aufBildschirm(p){
+  const vw = video.videoWidth, vh = video.videoHeight, s = Math.max(W / vw, H / vh);
+  let x = p.x * vw * s + (W - vw * s) / 2;
+  if (gespiegelt) x = W - x;
+  return { x, y: p.y * vh * s + (H - vh * s) / 2 };
+}
+
+const glatt = { x: 0, y: 0, gr: 0, rot: 0, sicht: 0 };
+let letzteHand = -1e9, letzteZeit = -1, frames = 0, fpsZeit = performance.now();
+const lerp = (a, b, k) => a + (b - a) * k;
+
+function schleife(now){
+  requestAnimationFrame(schleife);
+  if (video.readyState >= 2 && video.currentTime !== letzteZeit) {
+    letzteZeit = video.currentTime;
+    const res = landmarker.detectForVideo(video, now);
+    const lm = res.landmarks && res.landmarks[0];
+    if (lm) {
+      const P = i => aufBildschirm(lm[i]);
+      const hg = P(0), mitte = P(9);
+      const ids = [0, 5, 9, 13, 17]; let cx = 0, cy = 0;
+      for (const i of ids) { const q = P(i); cx += q.x; cy += q.y; } cx /= 5; cy /= 5;
+      const breite = Math.hypot(P(5).x - P(17).x, P(5).y - P(17).y);
+      const laenge = Math.hypot(mitte.x - hg.x, mitte.y - hg.y);
+      const gr = Math.max(breite * 1.6, laenge * 1.05);           // Figur etwa so groß wie die Handfläche
+      let rot = Math.atan2(mitte.x - hg.x, -(mitte.y - hg.y));    // Neigung der Hand
+      rot = Math.max(-0.7, Math.min(0.7, rot));
+      const k = glatt.sicht < 0.05 ? 1 : 0.35;
+      glatt.x = lerp(glatt.x, cx, k); glatt.y = lerp(glatt.y, cy + gr * 0.12, k);
+      glatt.gr = lerp(glatt.gr, gr, k); glatt.rot = lerp(glatt.rot, rot, 0.25);
+      letzteHand = now;
+    }
+  }
+  if (location.hash === "#demo") { glatt.x = W / 2; glatt.y = H * 0.62; glatt.gr = Math.min(W, H) * 0.45; letzteHand = now; }
+  const da = now - letzteHand < 350;
+  glatt.sicht = lerp(glatt.sicht, da ? 1 : 0, 0.15);
+  $("hinweis").classList.toggle("weg", now - letzteHand < 1200);
+
+  const t = now / 1000;
+  aktiv.userData.tick(t);
+  halter.position.set(glatt.x, -glatt.y, 0);
+  halter.scale.setScalar(Math.max(0.001, glatt.gr * glatt.sicht));
+  halter.rotation.set(0.32, Math.sin(t * 0.7) * 0.6, -glatt.rot);   // leicht von oben + langsames Drehen, damit man das 3D sieht
+  halter.visible = glatt.sicht > 0.02;
+  renderer.render(scene, cam);
+
+  frames++; if (now - fpsZeit > 1000) { $("fps").textContent = frames + " Bilder/s"; frames = 0; fpsZeit = now; }
+}
+</script>
+</body>
+</html>
