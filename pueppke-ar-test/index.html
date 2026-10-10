@@ -96,39 +96,67 @@ function schattenScheibe(){
   s.rotation.x = -Math.PI / 2; s.scale.set(1, 0.6, 1); return s;
 }
 
-/* Püppke: Feldhase (Platzhalter aus Grundformen) */
+/* Püppke nach dem Charakterblatt: gelb, cremefarbener Bauch, orange Ohrspitzen, große Augen, Schnurrhaare */
 function baueHase(){
-  const g = new THREE.Group(), fell = mat(0xa87a4c), bauch = mat(0xecd8b6), dunkel = mat(0x1d1612, 0.3), rosa = mat(0xe79aa6);
+  const g = new THREE.Group();
+  const fell = mat(0xf5bf2c, 0.9), bauch = mat(0xf9dc8c, 0.95), orange = mat(0xe8742a, 0.8), nase = mat(0xd9572b, 0.5);
+  const weiss = mat(0xffffff, 0.35), schwarz = mat(0x15110e, 0.25), schwanz = mat(0xfbf3dc, 1);
+  const kapsel = (r, l, m) => new THREE.Mesh(new THREE.CapsuleGeometry(r, l, 8, 16), m);
   const koerper = new THREE.Group(); g.add(koerper);
-  koerper.add(at(kugel(0.34, fell, 1, 1.15, 0.95), 0, 0.42, 0));
-  koerper.add(at(kugel(0.22, bauch, 1, 1.2, 0.6), 0, 0.40, 0.17));
-  const kopf = new THREE.Group(); kopf.position.set(0, 0.88, 0.04); koerper.add(kopf);
-  kopf.add(kugel(0.23, fell, 1, 0.95, 0.95));
-  kopf.add(at(kugel(0.11, bauch, 1.2, 0.8, 0.8), 0, -0.07, 0.17));
-  kopf.add(at(kugel(0.035, rosa), 0, -0.02, 0.24));
+  // Rumpf: schlank, nach oben schmaler
+  koerper.add(at(kugel(0.2, fell, 1, 1.45, 0.9), 0, 0.5, 0));
+  koerper.add(at(kugel(0.15, bauch, 1, 1.5, 0.5), 0, 0.47, 0.11));
+  // Beine + lange Füße
   for (const s of [-1, 1]) {
-    kopf.add(at(kugel(0.045, dunkel), 0.1 * s, 0.05, 0.18));
-    kopf.add(at(kugel(0.014, mat(0xffffff, 0.2)), 0.1 * s + 0.012, 0.068, 0.215));
+    koerper.add(at(kugel(0.1, fell, 0.9, 1.6, 1), 0.1 * s, 0.18, 0));
+    koerper.add(at(kugel(0.07, fell, 0.9, 0.55, 2.2), 0.11 * s, 0.04, 0.08));
   }
+  // Arme (winken)
+  const arme = [];
+  for (const s of [-1, 1]) {
+    const a = new THREE.Group(); a.position.set(0.16 * s, 0.66, 0.03); koerper.add(a);
+    const m = kapsel(0.04, 0.24, fell); m.position.set(0, -0.14, 0); a.add(m);
+    a.add(at(kugel(0.05, fell), 0, -0.29, 0));
+    a.userData.s = s; arme.push(a);
+  }
+  // Puschelschwanz
+  koerper.add(at(kugel(0.08, schwanz), 0, 0.3, -0.18));
+  // Kopf: groß, Schnauze leicht nach vorn
+  const kopf = new THREE.Group(); kopf.position.set(0, 0.98, 0.02); koerper.add(kopf);
+  kopf.add(kugel(0.24, fell, 1.05, 0.95, 1));
+  kopf.add(at(kugel(0.13, bauch, 1.2, 0.85, 0.8), 0, -0.08, 0.15));
+  const n = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.05, 3), nase); n.rotation.set(Math.PI / 2 + 0.3, 0, Math.PI); n.position.set(0, -0.01, 0.25); kopf.add(n);
+  for (const s of [-1, 1]) {
+    // große runde Augen mit dicker Pupille und Glanzpunkt
+    kopf.add(at(kugel(0.09, weiss, 1, 1.05, 0.6), 0.12 * s, 0.05, 0.17));
+    kopf.add(at(kugel(0.055, schwarz, 1, 1.05, 0.6), 0.13 * s, 0.045, 0.21));
+    kopf.add(at(kugel(0.013, weiss), 0.11 * s, 0.065, 0.235));
+    // Schnurrhaare
+    const pts = [];
+    for (const dy of [-0.025, 0, 0.025]) pts.push(new THREE.Vector3(0.07 * s, -0.03, 0.22), new THREE.Vector3(0.27 * s, -0.03 + dy * 2.2, 0.16));
+    kopf.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x6b5a48 })));
+  }
+  // Mund (kleines Lächeln)
+  const mund = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.008, 6, 16, Math.PI), schwarz);
+  mund.rotation.z = Math.PI; mund.position.set(0, -0.06, 0.245); kopf.add(mund);
+  // lange Ohren mit orangen Spitzen, leicht nach hinten
   const ohren = [];
   for (const s of [-1, 1]) {
-    const o = new THREE.Group(); o.position.set(0.09 * s, 0.17, -0.02); o.rotation.z = -0.18 * s; kopf.add(o);
-    o.add(at(new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.38, 8, 16), fell), 0, 0.25, 0));
-    const innen = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.3, 8, 16), rosa); innen.position.set(0, 0.25, 0.035); o.add(innen);
-    const spitze = kugel(0.05, dunkel, 1, 0.9, 0.9); spitze.position.set(0, 0.47, 0); o.add(spitze); // Feldhase: schwarze Ohrspitzen
+    const o = new THREE.Group(); o.position.set(0.08 * s, 0.17, -0.03); o.rotation.set(-0.15, 0, -0.12 * s); kopf.add(o);
+    o.add(at(kugel(0.075, fell, 1, 3.6, 0.45), 0, 0.27, 0));
+    o.add(at(kugel(0.05, orange, 1, 2.6, 0.3), 0, 0.3, 0.025));
+    o.add(at(kugel(0.06, orange, 1, 1.6, 0.42), 0, 0.46, 0));
     ohren.push(o);
   }
-  for (const s of [-1, 1]) {
-    koerper.add(at(kugel(0.12, fell, 0.8, 0.5, 1.6), 0.17 * s, 0.06, 0.12));
-    koerper.add(at(kugel(0.06, fell, 0.8, 1.4, 0.9), 0.12 * s, 0.32, 0.25));
-  }
-  koerper.add(at(kugel(0.09, mat(0xffffff)), 0, 0.28, -0.33));
   g.add(schattenScheibe());
   g.userData.tick = t => {
-    const phase = t % 3.2; const hop = phase < 0.9 ? Math.abs(Math.sin(phase / 0.9 * Math.PI * 2)) * 0.22 : 0;
+    const phase = t % 3.2; const hop = phase < 0.9 ? Math.abs(Math.sin(phase / 0.9 * Math.PI * 2)) * 0.2 : 0;
     koerper.position.y = hop;
-    ohren[0].rotation.x = Math.sin(t * 3) * 0.08 - hop; ohren[1].rotation.x = Math.sin(t * 3 + 1) * 0.08 - hop;
+    ohren[0].rotation.x = -0.15 + Math.sin(t * 3) * 0.08 - hop * 1.2;
+    ohren[1].rotation.x = -0.15 + Math.sin(t * 3 + 1) * 0.08 - hop * 1.2;
     kopf.rotation.z = Math.sin(t * 1.3) * 0.08;
+    arme[0].rotation.z = -0.5 - (hop ? 1.2 : 0.35 + Math.sin(t * 7) * 0.35);  // winkt
+    arme[1].rotation.z = 0.5 + (hop ? 1.2 : 0.15);
     g.children.at(-1).scale.setScalar(1 - hop * 1.2);
   };
   return g;
