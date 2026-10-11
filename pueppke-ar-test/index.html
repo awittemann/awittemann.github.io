@@ -282,11 +282,33 @@ async function ladePueppkeGLB(){
   };
   return g;
 }
-ladePueppkeGLB().then(g => {
+/* Püppke als KI-3D-Modell (TRELLIS.2, aus dem Charakterblatt), Y oben, Blick nach +Z, Höhe 1 */
+async function ladePueppkeKI(){
+  const gltf = await new GLTFLoader().loadAsync("./modelle/pueppke_ki.glb");
+  gltf.scene.traverse(o => { if (o.isMesh) {
+    if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+    o.material = new THREE.MeshLambertMaterial({ vertexColors: true });
+  }});
+  const box = new THREE.Box3().setFromObject(gltf.scene);
+  const modell = new THREE.Group(); modell.add(gltf.scene);
+  gltf.scene.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+  const hoehe = box.max.y - box.min.y; modell.scale.setScalar(1.75 / hoehe);
+  const koerper = new THREE.Group(); koerper.add(modell);
+  const g = new THREE.Group(); g.add(koerper); g.add(schattenScheibe());
+  g.userData.tick = t => {
+    const phase = t % 3.2; const hop = phase < 0.9 ? Math.abs(Math.sin(phase / 0.9 * Math.PI * 2)) * 0.2 : 0;
+    koerper.position.y = hop;
+    koerper.scale.set(1 + hop * 0.15, 1 - hop * 0.1, 1);          // leichtes Stauchen beim Hüpfen
+    koerper.rotation.z = Math.sin(t * 1.6) * 0.06;                  // wiegt sich hin und her
+    g.children.at(-1).scale.setScalar(1 - hop * 1.2);
+  };
+  return g;
+}
+ladePueppkeKI().then(g => {
   const warAktiv = aktiv === figuren.pueppke;
   figuren.pueppke = g;
   if (warAktiv) waehle("pueppke");
-}).catch(e => console.warn("3D-Modell nicht geladen, Platzhalter bleibt", e));
+}).catch(e => console.warn("KI-Modell nicht geladen", e));
 
 /* ---------- Kamera + Handerkennung ---------- */
 let landmarker, gespiegelt = false;
